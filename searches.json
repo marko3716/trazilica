@@ -1,0 +1,14 @@
+{
+  "searches": [
+    {
+      "name": "Dugo Selo Kuce / <=350k",
+      "url": "https://www.njuskalo.hr/prodaja-kuca/dugo-selo?price[min]=0&price[max]=350000&adsWithImages=1&sort=new",
+      "enabled": true
+    },
+    {
+      "name": "Dugo Selo Stanovi / <=350k",
+      "url": "https://www.njuskalo.hr/prodaja-stanova/dugo-selo?price[min]=0&price[max]=350000&sort=new",
+      "enabled": true
+    }
+  ]
+}
