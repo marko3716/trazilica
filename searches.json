@@ -9,6 +9,16 @@
       "name": "Dugo Selo Stanovi / <=350k",
       "url": "https://www.njuskalo.hr/prodaja-stanova/dugo-selo?price[min]=0&price[max]=350000&sort=new",
       "enabled": true
+    },
+    {
+      "name": "Zapresic Kuce / <= 350k",
+      "url": "https://www.njuskalo.hr/prodaja-kuca/zapresic?price[min]=0&price[max]=350000&sort=new",
+      "enabled": true
+    },
+    {
+      "name": "Zapresic Stanovi / <= 350k",
+      "url": "https://www.njuskalo.hr/prodaja-stanova/zapresic?price[min]=0&price[max]=350000",
+      "enabled": true
     }
   ]
 }
