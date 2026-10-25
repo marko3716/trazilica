@@ -19,6 +19,11 @@
       "name": "Zapresic Stanovi / <= 350k",
       "url": "https://www.njuskalo.hr/prodaja-stanova/zapresic?price[min]=0&price[max]=350000",
       "enabled": true
+    },
+    {
+      "name": "Zagreb S3+ / Jarun / <= 350k",
+      "url": "https://www.njuskalo.hr/prodaja-stanova/tresnjevka-jug?price[min]=0&price[max]=350000&numberOfRooms[min]=three-rooms&numberOfRooms[max]=four-rooms",
+      "enabled": true
     }
   ]
 }
