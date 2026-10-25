@@ -2,7 +2,7 @@ name: njuskalo-watch
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # GH cron je UTC i zna kasnit 5-30 min
+    - cron: "7,22,37,52 * * * *"   # off-peak minutes, UTC
   workflow_dispatch:
 
 permissions:
