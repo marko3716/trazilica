@@ -297,21 +297,27 @@ async function notify(text: string, retry = true): Promise<void> {
   console.error("telegram failed:", res.status, body);
 }
 
-function render(s: Search, items: Listing[]): string {
-  const head = `🔔 <b>${esc(s.name)}</b> — ${items.length} new`;
-  const body = items
-    .slice(0, MAX_ITEMS_PER_MESSAGE)
-    .map(
-      (l) =>
-        `• <a href="${l.url}">${esc(l.title.slice(0, 90))}</a>` +
-        (l.priceText ? ` — <b>${esc(l.priceText)}</b>` : ""),
-    )
-    .join("\n");
-  const more =
-    items.length > MAX_ITEMS_PER_MESSAGE
-      ? `\n…and ${items.length - MAX_ITEMS_PER_MESSAGE} more`
-      : "";
-  return `${head}\n${body}${more}`;
+/**
+ * Render new listings as one or more Telegram messages. Every listing is sent:
+ * long lists are split into chunks of MAX_ITEMS_PER_MESSAGE rather than
+ * truncated, because a listing left out here is already marked seen and would
+ * never be reported again. Chunks after the first carry a "(2/3)" counter.
+ */
+export function render(s: Search, items: Listing[]): string[] {
+  const line = (l: Listing) =>
+    `• <a href="${l.url}">${esc(l.title.slice(0, 90))}</a>` +
+    (l.priceText ? ` — <b>${esc(l.priceText)}</b>` : "");
+
+  const chunks: Listing[][] = [];
+  for (let i = 0; i < items.length; i += MAX_ITEMS_PER_MESSAGE) {
+    chunks.push(items.slice(i, i + MAX_ITEMS_PER_MESSAGE));
+  }
+
+  return chunks.map((chunk, i) => {
+    const part = chunks.length > 1 ? ` (${i + 1}/${chunks.length})` : "";
+    const head = `🔔 <b>${esc(s.name)}</b> — ${items.length} new${part}`;
+    return `${head}\n${chunk.map(line).join("\n")}`;
+  });
 }
 
 // ---------------------------------------------------------------- searches
@@ -436,7 +442,7 @@ async function main(): Promise<void> {
     }
 
     console.log(`${s.name}: ${fresh.length} new`);
-    if (fresh.length) await notify(render(s, fresh));
+    for (const msg of render(s, fresh)) await notify(msg);
   }
 
   if (DRY) {
