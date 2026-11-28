@@ -86,6 +86,15 @@ captures the block page. `fetchPage` renders each URL in headless Chromium
 (Playwright), which runs the challenge and returns the real markup. The CI
 workflow installs the browser with `npx playwright install --with-deps chromium`.
 
+Runners sit on datacenter IPs, and Radware blocks them intermittently (a few
+percent of runs). So one browser context is reused for the whole run (the
+challenge cookie carries over), searches are spaced a few seconds apart, and
+`fetchListings` retries an empty page up to 3 times with a fresh context and a
+30-60 s pause before reporting it. Retrying is not a softening of the zero-is-an-
+error rule: after the last attempt it still warns and exits non-zero.
+`isBlockPage` must not key on the Radware script name alone; every real page
+embeds it.
+
 Be a decent citizen: one browser per run, reused across pages, keep the pause
 between page fetches. No need to crank the cron — Actions minutes are free on a
 public repo, but the site isn't.

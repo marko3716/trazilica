@@ -1,5 +1,5 @@
 import { load } from "cheerio";
-import { chromium, type Browser } from "playwright";
+import { chromium, type Browser, type BrowserContext } from "playwright";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,6 +10,8 @@ const SEARCHES_PATH = "searches.json";
 const BASE = "https://www.njuskalo.hr";
 const RETENTION_DAYS = 30;
 const MAX_ITEMS_PER_MESSAGE = 10;
+/** Tries per page before a run reports it as blocked. */
+const FETCH_ATTEMPTS = 3;
 
 /**
  * Njuskalo ad URLs always end in `-oglas-<id>`. Far more stable than CSS
@@ -58,27 +60,58 @@ const fold = (s: string) =>
 // real browser that executes the challenge gets the page, so we render with
 // headless Chromium. One browser is launched lazily and reused for the whole run.
 let browser: Browser | null = null;
+let context: BrowserContext | null = null;
 
-async function getBrowser(): Promise<Browser> {
+/**
+ * One context per run, reused across pages, so the cookie earned by clearing
+ * the bot challenge on the first page carries over. A fresh context per page
+ * looks like a brand-new visitor every time, which is what gets runs blocked.
+ */
+async function getContext(): Promise<BrowserContext> {
   if (!browser) browser = await chromium.launch({ headless: true });
-  return browser;
+  if (!context) {
+    context = await browser.newContext({
+      userAgent: UA,
+      locale: "hr-HR",
+      viewport: { width: 1366, height: 900 },
+    });
+  }
+  return context;
+}
+
+/** Drop the context (and its cookies) so the next fetch starts clean. */
+async function resetContext(): Promise<void> {
+  if (context) {
+    await context.close().catch(() => {});
+    context = null;
+  }
 }
 
 async function closeBrowser(): Promise<void> {
+  await resetContext();
   if (browser) {
     await browser.close();
     browser = null;
   }
 }
 
-async function fetchPage(url: string): Promise<string> {
-  const context = await (await getBrowser()).newContext({
-    userAgent: UA,
-    locale: "hr-HR",
-    viewport: { width: 1366, height: 900 },
-  });
+/** The page we ended on is the bot wall rather than Njuskalo. */
+export class BlockedError extends Error {}
+
+/** True when the rendered page is Radware's challenge/block page. */
+export function isBlockPage(finalUrl: string, html: string): boolean {
+  let host = "";
   try {
-    const page = await context.newPage();
+    host = new URL(finalUrl).hostname;
+  } catch {}
+  if (host && !host.endsWith("njuskalo.hr")) return true;
+  return /perfdrive|radware|shieldsquare/i.test(html) &&
+    !html.includes("-oglas-");
+}
+
+async function fetchPage(url: string): Promise<string> {
+  const page = await (await getContext()).newPage();
+  try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
     // Wait for the challenge to resolve into the real ad list. If it never does
     // (a hard block, or genuinely empty results), fall through with whatever
@@ -87,10 +120,41 @@ async function fetchPage(url: string): Promise<string> {
       .waitForSelector("a[href*='-oglas-']", { timeout: 30_000 })
       .catch(() => {});
     await page.waitForTimeout(1000); // let late Vue hydration settle
-    return await page.content();
+    const html = await page.content();
+    if (isBlockPage(page.url(), html)) {
+      throw new BlockedError("blocked by bot check");
+    }
+    return html;
   } finally {
-    await context.close();
+    await page.close().catch(() => {});
   }
+}
+
+/**
+ * Fetch and parse, retrying when the page yields nothing. GitHub runners sit on
+ * datacenter IPs and Radware blocks them now and then; a block usually clears
+ * within a minute and a fresh context. Only after every attempt comes back empty
+ * do we give up, and the caller still treats that as an error, never as
+ * "nothing new".
+ */
+async function fetchListings(url: string): Promise<Listing[]> {
+  let last: Error = new Error("parsed 0 listings (blocked or markup changed?)");
+  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      await resetContext();
+      const wait = 30_000 + Math.random() * 30_000;
+      console.warn(`  ${last.message}; retry ${attempt}/${FETCH_ATTEMPTS} in ${Math.round(wait / 1000)}s`);
+      await sleep(wait);
+    }
+    try {
+      const listings = parseListings(await fetchPage(url));
+      if (listings.length > 0) return listings;
+      last = new Error("parsed 0 listings (blocked or markup changed?)");
+    } catch (e) {
+      last = e as Error;
+    }
+  }
+  throw new Error(`${last.message} after ${FETCH_ATTEMPTS} attempts`);
 }
 
 // ---------------------------------------------------------------- parsing
@@ -382,7 +446,9 @@ async function main(): Promise<void> {
 
   if (searches.length === 0) console.log("no enabled searches in searches.json");
 
-  for (const s of searches) {
+  for (const [i, s] of searches.entries()) {
+    // Space searches out like pages, so a run is not a burst of hits.
+    if (i > 0 && !PING) await sleep(2000 + Math.random() * 3000);
     const seen = (state[s.name] ??= {});
     const isSeedRun = Object.keys(seen).length === 0;
     const fresh: Listing[] = [];
@@ -391,19 +457,13 @@ async function main(): Promise<void> {
       const url = p === 1 ? s.url : withPage(s.url, p);
       let listings: Listing[];
 
+      // Zero listings is not "nothing new", it means we were blocked or the
+      // markup changed. fetchListings retries first, then throws, so the run
+      // still warns and exits non-zero. Without this the scraper dies quietly.
       try {
-        listings = parseListings(await fetchPage(url));
+        listings = await fetchListings(url);
       } catch (e) {
         problems.push(`${s.name} p${p}: ${(e as Error).message}`);
-        break;
-      }
-
-      // Zero listings is not "nothing new", it means we were blocked or the
-      // markup changed. Without this the scraper dies quietly.
-      if (listings.length === 0) {
-        problems.push(
-          `${s.name} p${p}: parsed 0 listings (blocked or markup changed?)`,
-        );
         break;
       }
 

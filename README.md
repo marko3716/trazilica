@@ -127,7 +127,7 @@ The first run **seeds**: it records everything currently listed and sends nothin
 
 ## Known failure modes
 
-**Datacenter IP.** GitHub runners come from Azure ranges that anti-bot systems rank poorly. The headless browser clears Njuskalo's normal JS challenge, but if a run still parses 0 listings, a harder block (or a markup change) is the likely cause, not your filters.
+**Datacenter IP.** GitHub runners come from Azure ranges that anti-bot systems rank poorly. The headless browser clears Njuskalo's normal JS challenge, but if a run still parses 0 listings, a harder block (or a markup change) is the likely cause, not your filters. Each empty page is retried up to 3 times (fresh browser session, 30–60 s apart) before the warning fires, so a warning now means it stayed blocked for a couple of minutes.
 
 **Cron lag.** `*/15` is the earliest, not the actual. Scheduled workflows are delayed 5–30 minutes routinely and occasionally skipped entirely.
 
